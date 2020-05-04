@@ -189,7 +189,7 @@ bundle('Endpoint/Apiary', function() {
                 response: {
                     statusCode: 500,
                     body: {
-                        message: 'Oh noes!'
+                        message: 'Oh noes!',
                     },
                 },
             });
