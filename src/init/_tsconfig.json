@@ -1,0 +1,9 @@
+{
+    "compilerOptions": {
+        "allowJs": true,
+        "types": [
+            "openapi-contract-validator-server"
+        ],
+        "outDir": "dummyFolder"
+    }
+}
