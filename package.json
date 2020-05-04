@@ -40,17 +40,17 @@
   "author": "Sander van Beek",
   "license": "Apache-2.0",
   "dependencies": {
-    "openapi-contract-validator": "^1.0.0",
     "ansi-colors": "^4.1.1",
     "api-problem": "^6.0.1",
-    "apiaryio": "^1.0.5",
     "cli-diagram": "^0.2.0",
     "commander": "^5.0.0",
     "cosmiconfig": "^6.0.0",
     "express": "^4.17.1",
     "express-http-proxy": "^1.6.0",
+    "got": "^11.1.0",
     "lodash": "^4.17.15",
-    "make-promises-safe": "^5.1.0"
+    "make-promises-safe": "^5.1.0",
+    "openapi-contract-validator": "^1.0.0"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^3.0.2",
