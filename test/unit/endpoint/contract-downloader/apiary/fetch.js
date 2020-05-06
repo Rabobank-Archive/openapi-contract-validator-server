@@ -1,6 +1,6 @@
 const sinon = require('sinon');
+const got = require('got');
 
-const apiaryio = require('apiaryio');
 const token = require('../../../../../src/endpoint/contract-downloader/apiary/token');
 const logger = require('../../../../../src/logger');
 
@@ -12,7 +12,7 @@ bundle('Endpoint/Apiary', function() {
             this.token = 'dummy-token';
             this.tokenStub = sinon.stub(token, 'get')
                 .returns(this.token);
-            this.fetchStub = sinon.stub(apiaryio, 'fetch');
+            this.gotGetStub = sinon.stub(got, 'get');
             this.loggerStub = sinon.stub(logger, 'log');
 
             this.config = {
@@ -26,18 +26,46 @@ bundle('Endpoint/Apiary', function() {
             sinon.restore();
         });
 
+        it('calls the correct endpoint', async function() {
+            const apiaryId = 'foobar';
+            this.gotGetStub.resolves({
+                body: {
+                    code: 'some:\n  yaml: content',
+                },
+            });
+
+            await fetch(apiaryId, this.config);
+
+            expect(this.gotGetStub).to.be.calledOnce;
+
+            const calledWith = this.gotGetStub.getCall(0).args;
+            expect(calledWith[0]).to.endWith(apiaryId);
+            expect(calledWith[1]).to.deep.equal({
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'text/plain',
+                    'Authentication': `Token ${this.token}`,
+                },
+                responseType: 'json',
+            });
+        });
+
         it('returns the parsed yaml result of the api call', async function() {
             const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                expect(apiaryId).to.equal('foobar');
-                expect(apiaryToken).to.equal(this.token);
-
-                callback(`some:\n  yaml: content`);
+            this.gotGetStub.resolves({
+                body: {
+                    code: 'some:\n  yaml: content',
+                },
             });
 
             const result = await fetch(apiaryId, this.config);
 
-            expect(this.fetchStub).to.be.calledOnce;
+            expect(this.gotGetStub).to.be.calledOnce;
+
+            const calledWith = this.gotGetStub.getCall(0).args;
+            expect(calledWith[0]).to.endWith(apiaryId);
+            expect(calledWith[1].headers.Authentication).to.equal(`Token ${this.token}`);
+
             expect(result).to.deep.equal({
                 some: {
                     yaml: 'content',
@@ -47,16 +75,20 @@ bundle('Endpoint/Apiary', function() {
 
         it('returns the parsed json result of the api call', async function() {
             const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                expect(apiaryId).to.equal('foobar');
-                expect(apiaryToken).to.equal(this.token);
-
-                callback(`{"some":{"json":"content"}}`);
+            this.gotGetStub.resolves({
+                body: {
+                    code: '{"some":{"json":"content"}}',
+                },
             });
 
             const result = await fetch(apiaryId, this.config);
 
-            expect(this.fetchStub).to.be.calledOnce;
+            expect(this.gotGetStub).to.be.calledOnce;
+
+            const calledWith = this.gotGetStub.getCall(0).args;
+            expect(calledWith[0]).to.endWith(apiaryId);
+            expect(calledWith[1].headers.Authentication).to.equal(`Token ${this.token}`);
+
             expect(result).to.deep.equal({
                 some: {
                     json: 'content',
@@ -64,99 +96,112 @@ bundle('Endpoint/Apiary', function() {
             });
         });
 
-        it('returns the raw result of the api call when it\'s not yaml or json', async function() {
+        it('throws when the API response is not yaml or json', async function() {
             const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                expect(apiaryId).to.equal('foobar');
-                expect(apiaryToken).to.equal(this.token);
-
-                callback(`some plain text`);
+            this.gotGetStub.resolves({
+                body: {
+                    code: 'some plain text',
+                },
             });
 
-            const result = await fetch(apiaryId, this.config);
-
-            expect(this.fetchStub).to.be.calledOnce;
-            expect(result).to.deep.equal('some plain text');
-        });
-
-        it('logs a warning when the result of the api call is not yaml or json', async function() {
-            const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                callback(`some plain text`);
-            });
-
-            await fetch(apiaryId, this.config);
-
-            expect(this.loggerStub).to.be.calledWithExactly(0,
-                `Could not fetch valid contract from Apiary: `
-                + `Response could not be parsed as JSON or YAML`);
+            await expect(fetch(apiaryId, this.config)).to.eventually.be.rejectedWith(
+                'Contract in API response could not be parsed as JSON or YAML');
         });
 
         it('throws when the result of the api call is empty', async function() {
             const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                callback(``);
+            this.gotGetStub.resolves({
+                body: {
+                    code: '',
+                },
             });
 
             await expect(fetch(apiaryId, this.config))
-                .to.eventually.be.rejectedWith('API response is empty');
+                .to.eventually.be.rejectedWith('Contract in API response is empty');
         });
 
         it('throws when the result of the api call is not a string', async function() {
             const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                callback();
+            this.gotGetStub.resolves({
+                body: {
+                    code: null,
+                },
             });
 
             await expect(fetch(apiaryId, this.config))
-                .to.eventually.be.rejectedWith('API response is not a string');
+                .to.eventually.be.rejectedWith('Contract in API response is not a string');
         });
 
-        it('throws when the api throws without a reason', async function() {
+        it('throws when the api throws with message', async function() {
             const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                errorCallback();
+            this.gotGetStub.resolves({
+                body: {
+                    error: true,
+                    message: 'Awesome message',
+                },
             });
 
-            await expect(fetch(apiaryId, this.config))
-                .to.eventually.be.rejectedWith(
-                    'Could not fetch valid contract from Apiary for an unkown reason\n'
-                    + 'Possible reasons for this failure:\n'
-                    + '1. You have not provided a (valid) Apiary token\n'
-                    + '   Note: You can generate a token @ https://login.apiary.io/tokens\n'
-                    + '2. The token provided does not have read permissions\n'
-                    + '3. You can\'t reach Apiary');
+            await expect(fetch(apiaryId, this.config)).to.eventually.be.rejectedWith(
+                'Apiary responded with an error: Awesome message');
         });
 
-        it('throws when the api throws without a reason, but with a body', async function() {
+        it('throws when Apiary responds with 403', async function() {
             const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                errorCallback({
-                    body: '{"foo":"bar"}',
-                });
+            this.gotGetStub.rejects({
+                response: {
+                    statusCode: 403,
+                    body: {
+                        message: 'Amazing message mate',
+                    },
+                },
             });
 
-            await expect(fetch(apiaryId, this.config))
-                .to.eventually.be.rejectedWith(
-                    'Could not fetch valid contract from Apiary for an unkown reason\n'
-                    + 'Possible reasons for this failure:\n'
-                    + '1. You have not provided a (valid) Apiary token\n'
-                    + '   Note: You can generate a token @ https://login.apiary.io/tokens\n'
-                    + '2. The token provided does not have read permissions\n'
-                    + '3. You can\'t reach Apiary');
+            await expect(fetch(apiaryId, this.config)).to.eventually.be.rejectedWith(
+                'Could not fetch valid contract from Apiary: 403: Amazing message mate\n'
+                + 'Probable reasons for this failure:\n'
+                + '1. You have not provided a (valid) Apiary token\n'
+                + '   Note: You can generate a token @ https://login.apiary.io/tokens\n'
+                + '2. The token provided does not have read permissions\n'
+                + '3. Your account is not allowed to access the contract');
         });
 
-        it('throws when the api throws with a reason', async function() {
+        it('throws when Apiary responds with 500 without message', async function() {
             const apiaryId = 'foobar';
-            this.fetchStub.callsFake((apiaryId, apiaryToken, callback, errorCallback) => {
-                errorCallback({
-                    body: '{"message":"A good reason"}',
-                });
+            this.gotGetStub.rejects({
+                response: {
+                    statusCode: 500,
+                    body: {},
+                },
             });
 
-            await expect(fetch(apiaryId, this.config))
-                .to.eventually.be.rejectedWith(
-                    'Could not fetch valid contract from Apiary: A good reason');
+            try {
+                await fetch(apiaryId, this.config);
+                throw new Error('Expected error to be thrown');
+            }
+            catch (error) {
+                expect(error.message).to.equal('Could not fetch valid contract from Apiary: 500');
+            }
+        });
+
+        it('throws when Apiary responds with 500 with message', async function() {
+            const apiaryId = 'foobar';
+            this.gotGetStub.rejects({
+                response: {
+                    statusCode: 500,
+                    body: {
+                        message: 'Oh noes!',
+                    },
+                },
+            });
+
+            try {
+                await fetch(apiaryId, this.config);
+                throw new Error('Expected error to be thrown');
+            }
+            catch (error) {
+                expect(error.message).to.equal(
+                    'Could not fetch valid contract from Apiary: 500: Oh noes!');
+            }
         });
     });
 });
